@@ -581,7 +581,7 @@ cdef class NeuralCoref(object):
             self.conv_dict.add(key=norm_k, vector=embed_vector/max(len(norm_w), 1))
 
     def __call__(self, doc, greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None, *, has_mentions=False):
+             conv_dict=None, blacklist=None, *, use_existing_mentions=False):
         """Apply the pipeline component on a Doc object. """
         if greedyness is None:
             greedyness = self.cfg_inference.get('greedyness', GREEDYNESS)
@@ -595,7 +595,7 @@ cdef class NeuralCoref(object):
         self.set_conv_dict(conv_dict)
 
         annotations = self.predict([doc], greedyness=greedyness, max_dist=max_dist,
-                                  max_dist_match=max_dist_match, blacklist=blacklist, has_mentions=has_mentions)
+                                  max_dist_match=max_dist_match, blacklist=blacklist, use_existing_mentions=use_existing_mentions)
         self.set_annotations([doc], annotations)
         return doc
 
@@ -629,7 +629,7 @@ cdef class NeuralCoref(object):
             yield from docs
 
     def predict(self, docs, float greedyness=0.5, int max_dist=MAX_DIST, int max_dist_match=MAX_DIST_MATCH,
-                conv_dict=None, bint blacklist=False, *, bool has_mentions=False):
+                conv_dict=None, bint blacklist=False, *, bool use_existing_mentions=False):
         ''' Predict coreference clusters
         docs (iterable): A sequence of `Doc` objects.
         RETURNS (iterable): List of (lists of mentions, lists of clusters, lists of main mentions per cluster) for each doc.
@@ -657,9 +657,9 @@ cdef class NeuralCoref(object):
             mem = Pool() # We use this for doc specific allocation
             strings = doc.vocab.strings
             # ''' Extract mentions '''
-            if not has_mentions: # Original Code Execution using spacy mentions
+            n_sents = len(list(doc.sents))
+            if not use_existing_mentions: # Original Code Execution using spacy mentions
                 mentions, n_mentions = extract_mentions_spans(doc, self.hashes, blacklist=blacklist)
-                n_sents = len(list(doc.sents))
             else: # Use mentions provided by the input document
                 mentions = doc.mentions
                 n_mentions = len(doc.mentions)
