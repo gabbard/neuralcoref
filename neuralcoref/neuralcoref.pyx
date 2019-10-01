@@ -536,6 +536,8 @@ cdef class NeuralCoref(object):
             cfg_inference['store_scores'] = util.env_opt('store_scores', True)
         if 'conv_dict' not in cfg_inference:
             cfg_inference['conv_dict'] = util.env_opt('conv_dict', None)
+        if 'use_existing_mentions' not in cfg_inference:
+            cfg_inference['use_existing_mentions'] = util.env_opt('use_existing_mentions', False)
         self.cfg_inference = cfg_inference
 
         # Register attributes on Doc and Span
@@ -581,7 +583,7 @@ cdef class NeuralCoref(object):
             self.conv_dict.add(key=norm_k, vector=embed_vector/max(len(norm_w), 1))
 
     def __call__(self, doc, greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None, use_existing_mentions=True):
+             conv_dict=None, blacklist=None, use_existing_mentions=None):
         """Apply the pipeline component on a Doc object. """
         if greedyness is None:
             greedyness = self.cfg_inference.get('greedyness', GREEDYNESS)
@@ -591,6 +593,8 @@ cdef class NeuralCoref(object):
             max_dist_match = self.cfg_inference.get('max_dist_match', MAX_DIST_MATCH)
         if blacklist is None:
             blacklist = self.cfg_inference.get('blacklist', True)
+        if use_existing_mentions is None:
+            use_existing_mentions = self.cfg_inference.get('use_existing_mentions', False)
 
         self.set_conv_dict(conv_dict)
 
@@ -601,7 +605,7 @@ cdef class NeuralCoref(object):
 
     def pipe(self, stream, batch_size=128, n_threads=1,
              greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None, use_existing_mentions=False):
+             conv_dict=None, blacklist=None, use_existing_mentions=None):
         """Process a stream of documents. Currently not optimized.
         stream: The sequence of documents to process.
         batch_size (int): Number of documents to accumulate into a working set.
@@ -617,6 +621,8 @@ cdef class NeuralCoref(object):
             max_dist_match = self.cfg_inference.get('max_dist_match', MAX_DIST_MATCH)
         if blacklist is None:
             blacklist = self.cfg_inference.get('blacklist', True)
+        if use_existing_mentions is None:
+            use_existing_mentions = self.cfg_inference.get('use_existing_mentins', False)
 
         self.set_conv_dict(conv_dict)
 
