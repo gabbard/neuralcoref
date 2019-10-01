@@ -657,15 +657,13 @@ cdef class NeuralCoref(object):
         #    clock_gettime(CLOCK_REALTIME, &ts)
         #    timing0 = ts.tv_sec + (ts.tv_nsec / 1000000000.)
 
-        debug = False
         annotations = []
-        if debug: print("Extract mentions")
+        # if debug: print("Extract mentions")
         for doc in docs:
             mem = Pool() # We use this for doc specific allocation
             strings = doc.vocab.strings
             # ''' Extract mentions '''
             n_sents = len(list(doc.sents))
-            print(f"{use_existing_mentions} | {greedyness}")
             if not use_existing_mentions: # Original Code Execution using spacy entities to extract mentions
                 mentions, n_mentions = extract_mentions_spans(doc, self.hashes, blacklist=blacklist)
             else:
@@ -697,7 +695,7 @@ cdef class NeuralCoref(object):
                 for j, w in enumerate(content_words[-1]):
                     c[i].content_words.arr[j] = strings.add(w)
 
-            if debug: print("Prepare arrays of pairs indices and features for feeding the model")
+            # if debug: print("Prepare arrays of pairs indices and features for feeding the model")
             # ''' Prepare arrays of pairs indices and features for feeding the model '''
             pairs_ant = []
             pairs_men = []
@@ -733,7 +731,7 @@ cdef class NeuralCoref(object):
             p_inp_arr = numpy.zeros((n_pairs, SIZE_PAIR_IN_NO_GENRE + SIZE_GENRE), dtype='float32')
             p_inp = p_inp_arr
 
-            if debug: print("Build single features and pair features arrays")
+            # if debug: print("Build single features and pair features arrays")
             # ''' Build single features and pair features arrays '''
             doc_c = doc.c
             doc_embedding = numpy.zeros(SIZE_EMBEDDING, dtype='float32') # self.embeds.get_average_embedding(doc.c, 0, doc.length + 1, self.hashes.puncts)
@@ -773,7 +771,7 @@ cdef class NeuralCoref(object):
                 p_inp[i, PAIR_FEATS_7:PAIR_FEATS_8] = s_inp[men_idx, SGNL_FEATS_0:SGNL_FEATS_5] # 10_M2Features
                 # 11_DocGenre is zero currently
 
-            if debug: print("Compute scores")
+            # if debug: print("Compute scores")
             # ''' Compute scores '''
             best_score_ar = numpy.empty((n_mentions), dtype='float32')
             best_ant_ar = numpy.empty((n_mentions), dtype=numpy.uint64)
@@ -791,7 +789,7 @@ cdef class NeuralCoref(object):
                     best_score[men_idx] = p_score[i, 0]
                     best_ant[men_idx] = ant_idx
 
-            if debug: print("Build clusters")
+            # if debug: print("Build clusters")
             # ''' Build clusters '''
             mention_to_cluster = list(range(n_mentions))
             cluster_to_main = list(range(n_mentions))
