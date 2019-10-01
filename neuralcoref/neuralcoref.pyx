@@ -601,7 +601,7 @@ cdef class NeuralCoref(object):
 
     def pipe(self, stream, batch_size=128, n_threads=1,
              greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None, has_mentions=False):
+             conv_dict=None, blacklist=None, *, use_existing_mentions=False):
         """Process a stream of documents. Currently not optimized.
         stream: The sequence of documents to process.
         batch_size (int): Number of documents to accumulate into a working set.
@@ -624,7 +624,7 @@ cdef class NeuralCoref(object):
             docs = list(docs)
             annotations = self.predict(docs, greedyness=greedyness, max_dist=max_dist,
                                     max_dist_match=max_dist_match, blacklist=blacklist,
-                                    has_mentions=has_mentions)
+                                    use_existing_mentions=use_existing_mentions)
             self.set_annotations(docs, annotations)
             yield from docs
 
@@ -651,18 +651,24 @@ cdef class NeuralCoref(object):
         #    clock_gettime(CLOCK_REALTIME, &ts)
         #    timing0 = ts.tv_sec + (ts.tv_nsec / 1000000000.)
 
+        debug = False
         annotations = []
-        # if debug: print("Extract mentions")
+        if debug: print("Extract mentions")
         for doc in docs:
             mem = Pool() # We use this for doc specific allocation
             strings = doc.vocab.strings
             # ''' Extract mentions '''
             n_sents = len(list(doc.sents))
-            if not use_existing_mentions: # Original Code Execution using spacy mentions
+            if not use_existing_mentions: # Original Code Execution using spacy entities to extract mentions
                 mentions, n_mentions = extract_mentions_spans(doc, self.hashes, blacklist=blacklist)
-            else: # Use mentions provided by the input document
-                mentions = doc.mentions
-                n_mentions = len(doc.mentions)
+            else:
+                # Use mentions provided by the input document
+                # These mentions are under a custom extension
+                if doc.has_extension("existing_mentions"):
+                    mentions = doc._.existing_mentions
+                    n_mentions = len(doc._.existing_mentions)
+                else:
+                    raise RuntimeError(f"Expected to use existing mentions from input spacy document but {doc} has none.")
             mentions = sorted((m for m in mentions), key=lambda m: (m.root.i, m.start))
             c = <Mention_C*>mem.alloc(n_mentions, sizeof(Mention_C))
             content_words = []
@@ -684,7 +690,7 @@ cdef class NeuralCoref(object):
                 for j, w in enumerate(content_words[-1]):
                     c[i].content_words.arr[j] = strings.add(w)
 
-            # if debug: print("Prepare arrays of pairs indices and features for feeding the model")
+            if debug: print("Prepare arrays of pairs indices and features for feeding the model")
             # ''' Prepare arrays of pairs indices and features for feeding the model '''
             pairs_ant = []
             pairs_men = []
@@ -720,7 +726,7 @@ cdef class NeuralCoref(object):
             p_inp_arr = numpy.zeros((n_pairs, SIZE_PAIR_IN_NO_GENRE + SIZE_GENRE), dtype='float32')
             p_inp = p_inp_arr
 
-            # if debug: print("Build single features and pair features arrays")
+            if debug: print("Build single features and pair features arrays")
             # ''' Build single features and pair features arrays '''
             doc_c = doc.c
             doc_embedding = numpy.zeros(SIZE_EMBEDDING, dtype='float32') # self.embeds.get_average_embedding(doc.c, 0, doc.length + 1, self.hashes.puncts)
@@ -760,7 +766,7 @@ cdef class NeuralCoref(object):
                 p_inp[i, PAIR_FEATS_7:PAIR_FEATS_8] = s_inp[men_idx, SGNL_FEATS_0:SGNL_FEATS_5] # 10_M2Features
                 # 11_DocGenre is zero currently
 
-            # if debug: print("Compute scores")
+            if debug: print("Compute scores")
             # ''' Compute scores '''
             best_score_ar = numpy.empty((n_mentions), dtype='float32')
             best_ant_ar = numpy.empty((n_mentions), dtype=numpy.uint64)
@@ -778,7 +784,7 @@ cdef class NeuralCoref(object):
                     best_score[men_idx] = p_score[i, 0]
                     best_ant[men_idx] = ant_idx
 
-            # if debug: print("Build clusters")
+            if debug: print("Build clusters")
             # ''' Build clusters '''
             mention_to_cluster = list(range(n_mentions))
             cluster_to_main = list(range(n_mentions))
