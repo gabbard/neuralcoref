@@ -18,6 +18,7 @@ cimport cython
 from cpython cimport array
 import array
 from libc.stdint cimport uint16_t, uint32_t, uint64_t, uintptr_t, int32_t
+from libcpp cimport bool
 
 import numpy
 from cymem.cymem cimport Pool
@@ -535,6 +536,8 @@ cdef class NeuralCoref(object):
             cfg_inference['store_scores'] = util.env_opt('store_scores', True)
         if 'conv_dict' not in cfg_inference:
             cfg_inference['conv_dict'] = util.env_opt('conv_dict', None)
+        if 'use_existing_mentions' not in cfg_inference:
+            cfg_inference['use_existing_mentions'] = util.env_opt('use_existing_mentions', False)
         self.cfg_inference = cfg_inference
 
         # Register attributes on Doc and Span
@@ -580,7 +583,7 @@ cdef class NeuralCoref(object):
             self.conv_dict.add(key=norm_k, vector=embed_vector/max(len(norm_w), 1))
 
     def __call__(self, doc, greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None):
+             conv_dict=None, blacklist=None, use_existing_mentions=None):
         """Apply the pipeline component on a Doc object. """
         if greedyness is None:
             greedyness = self.cfg_inference.get('greedyness', GREEDYNESS)
@@ -590,17 +593,19 @@ cdef class NeuralCoref(object):
             max_dist_match = self.cfg_inference.get('max_dist_match', MAX_DIST_MATCH)
         if blacklist is None:
             blacklist = self.cfg_inference.get('blacklist', True)
+        if use_existing_mentions is None:
+            use_existing_mentions = self.cfg_inference.get('use_existing_mentions', False)
 
         self.set_conv_dict(conv_dict)
 
         annotations = self.predict([doc], greedyness=greedyness, max_dist=max_dist,
-                                  max_dist_match=max_dist_match, blacklist=blacklist)
+                                  max_dist_match=max_dist_match, blacklist=blacklist, use_existing_mentions=use_existing_mentions)
         self.set_annotations([doc], annotations)
         return doc
 
     def pipe(self, stream, batch_size=128, n_threads=1,
              greedyness=None, max_dist=None, max_dist_match=None,
-             conv_dict=None, blacklist=None):
+             conv_dict=None, blacklist=None, use_existing_mentions=None):
         """Process a stream of documents. Currently not optimized.
         stream: The sequence of documents to process.
         batch_size (int): Number of documents to accumulate into a working set.
@@ -616,18 +621,21 @@ cdef class NeuralCoref(object):
             max_dist_match = self.cfg_inference.get('max_dist_match', MAX_DIST_MATCH)
         if blacklist is None:
             blacklist = self.cfg_inference.get('blacklist', True)
+        if use_existing_mentions is None:
+            use_existing_mentions = self.cfg_inference.get('use_existing_mentins', False)
 
         self.set_conv_dict(conv_dict)
 
         for docs in util.minibatch(stream, size=batch_size):
             docs = list(docs)
             annotations = self.predict(docs, greedyness=greedyness, max_dist=max_dist,
-                                    max_dist_match=max_dist_match, blacklist=blacklist)
+                                    max_dist_match=max_dist_match, blacklist=blacklist,
+                                    use_existing_mentions=use_existing_mentions)
             self.set_annotations(docs, annotations)
             yield from docs
 
     def predict(self, docs, float greedyness=0.5, int max_dist=MAX_DIST, int max_dist_match=MAX_DIST_MATCH,
-                conv_dict=None, bint blacklist=False):
+                conv_dict=None, bint blacklist=False, bint use_existing_mentions=False):
         ''' Predict coreference clusters
         docs (iterable): A sequence of `Doc` objects.
         RETURNS (iterable): List of (lists of mentions, lists of clusters, lists of main mentions per cluster) for each doc.
@@ -655,8 +663,17 @@ cdef class NeuralCoref(object):
             mem = Pool() # We use this for doc specific allocation
             strings = doc.vocab.strings
             # ''' Extract mentions '''
-            mentions, n_mentions = extract_mentions_spans(doc, self.hashes, blacklist=blacklist)
             n_sents = len(list(doc.sents))
+            if not use_existing_mentions: # Original Code Execution using spacy entities to extract mentions
+                mentions, n_mentions = extract_mentions_spans(doc, self.hashes, blacklist=blacklist)
+            else:
+                # Use mentions provided by the input document
+                # These mentions are under a custom extension
+                if doc.has_extension("existing_mentions"):
+                    mentions = doc._.existing_mentions
+                    n_mentions = len(doc._.existing_mentions)
+                else:
+                    raise RuntimeError(f"Expected to use existing mentions from input spacy document but {doc} has none.")
             mentions = sorted((m for m in mentions), key=lambda m: (m.root.i, m.start))
             c = <Mention_C*>mem.alloc(n_mentions, sizeof(Mention_C))
             content_words = []
