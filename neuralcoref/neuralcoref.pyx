@@ -54,6 +54,9 @@ GREEDYNESS = 0.5
 MAX_DIST = 50
 MAX_DIST_MATCH = 500
 
+DEBUG = True
+INCLUDE_SINGLETON_CLUSTERS = True
+
 ##############################
 ##### A BUNCH OF SIZES #######
 
@@ -507,7 +510,7 @@ cdef class NeuralCoref(object):
         }
         return (single_model, pairs_model), cfg
 
-    def __init__(self, Vocab vocab, model=True, **cfg_inference):
+    def __init__(self, Vocab vocab, model=True, debug=False, **cfg_inference):
         """Create a Coref pipeline component.
         vocab (Vocab): The vocabulary object. Must be shared with documents
             to be processed. The value is set to the `.vocab` attribute.
@@ -675,9 +678,12 @@ cdef class NeuralCoref(object):
                 else:
                     raise RuntimeError(f"Expected to use existing mentions from input spacy document but {doc} has none.")
             mentions = sorted((m for m in mentions), key=lambda m: (m.root.i, m.start))
+            
+            # Looks like we're pre-allocating a list of mention clusters, maybe?
             c = <Mention_C*>mem.alloc(n_mentions, sizeof(Mention_C))
-            content_words = []
+            content_words = [] # content_words[i] will contain sets of tokens that represent the ith mention
             for i, m in enumerate(mentions):
+                if DEBUG: print(f"mention extracted ({i}): {m}")
                 c[i].entity_label = get_span_entity_label(m)
                 c[i].span_start = m.start
                 c[i].span_end = m.end
@@ -700,6 +706,8 @@ cdef class NeuralCoref(object):
             pairs_ant = []
             pairs_men = []
             n_pairs = 0
+            # Reminder: `max_dist_match` is the maximum number of mentions back that the system
+            # will consider as antecedents (when the antecedent shares a noun or proper noun)
             if max_dist_match is not None:
                 word_to_mentions = {}
                 for i in range(n_mentions):
@@ -712,6 +720,9 @@ cdef class NeuralCoref(object):
                 if max_dist is None:
                     antecedents = set(range(<object>i))
                 else:
+                    # a trailing window of integers less than `i`.
+                    # the trailing window has a maximum size of `max_dist`.
+                    # e.g. if `i==7` and `max_dist==5`, then `antecedents=={2,3,4,5,6}`
                     antecedents = set(range(max(0, <object>i - max_dist), <object>i))
                 if max_dist_match is not None:
                     for tok in content_words[i]:
@@ -719,6 +730,12 @@ cdef class NeuralCoref(object):
                         for match_idx in with_string_match:
                             if match_idx < i and match_idx >= i - max_dist_match:
                                 antecedents.add(match_idx)
+                # TODO: I *think* this is building up a mapping between all mentions so that each pair can be scored.
+                #       `pairs_ant` appears to be the "values", while `pairs_men` appears to be the "keys".
+                #       `pairs_ant` and `pairs_ment` are aligned.
+                #       in other words: at index `x`, `pairs_men` has a mention's index/number (call it MENT).
+                #                       at index `x`, `pairs_ant` has a the index/number of a potential antecedent that for MENT.
+
                 pairs_ant += list(antecedents)
                 pairs_men += [i]*len(antecedents)
                 n_pairs += len(antecedents)
@@ -771,29 +788,36 @@ cdef class NeuralCoref(object):
                 p_inp[i, PAIR_FEATS_7:PAIR_FEATS_8] = s_inp[men_idx, SGNL_FEATS_0:SGNL_FEATS_5] # 10_M2Features
                 # 11_DocGenre is zero currently
 
-            # if debug: print("Compute scores")
+            if DEBUG: print("Compute scores")
             # ''' Compute scores '''
             best_score_ar = numpy.empty((n_mentions), dtype='float32')
             best_ant_ar = numpy.empty((n_mentions), dtype=numpy.uint64)
+            # what is the point of these two reassignments?
             best_score = best_score_ar
             best_ant = best_ant_ar
             s_score = self.model[0](s_inp_arr)
             for i in range(n_mentions):
                 best_score[i] = s_score[i, 0] - 50 * (greedyness - 0.5)
                 best_ant[i] = i
+                if DEBUG: print(f"mention {i} singleton score: {best_score[i]}")
+
             p_score = self.model[1](p_inp_arr)
+            if DEBUG: print(f'p_score: {p_score}')
             for i in range(n_pairs):
                 ant_idx = p_ant[i]
                 men_idx = p_men[i]
+                if DEBUG: print(f"checking pair {ant_idx},{men_idx} (ant,ment) with pair score={p_score[i, 0]} and best score={best_score[men_idx]}")
                 if p_score[i, 0] > best_score[men_idx]:
                     best_score[men_idx] = p_score[i, 0]
                     best_ant[men_idx] = ant_idx
+                    if DEBUG: print(f"found new best antecedent for mention <{mentions[men_idx]}>: <{mentions[ant_idx]}> ({p_score[i, 0]})")
 
-            # if debug: print("Build clusters")
+            if DEBUG: print("Build clusters")
             # ''' Build clusters '''
             mention_to_cluster = list(range(n_mentions))
             cluster_to_main = list(range(n_mentions))
             clusters = dict((i, [i]) for i in mention_to_cluster)
+
             for mention_idx, ant_idx in enumerate(best_ant):
                 if ant_idx != mention_idx:
                     if mention_to_cluster[ant_idx] == mention_to_cluster[mention_idx]:
@@ -812,7 +836,7 @@ cdef class NeuralCoref(object):
             clusters_list = []
             i = 0
             for key, m_idx_list in clusters.items():
-                if len(m_idx_list) != 1:
+                if len(m_idx_list) != 1 or INCLUDE_SINGLETON_CLUSTERS:
                     m_list = list(mentions[i] for i in m_idx_list)
                     main = mentions[cluster_to_main[key]]
                     clusters_list.append(Cluster(i, main, m_list))
@@ -833,7 +857,7 @@ cdef class NeuralCoref(object):
                 for i in range(n_pairs):
                     antecedent = mentions[p_ant[i]]
                     mention = mentions[p_men[i]]
-                    score = p_score[i, 0]
+                    score = p_score[i, 0] # why does the second index == 0?
                     if mention in scores_dict:
                         scores_dict[mention][antecedent] = score
                     else:
