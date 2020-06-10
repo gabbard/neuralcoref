@@ -677,7 +677,8 @@ cdef class NeuralCoref(object):
                     n_mentions = len(doc._.existing_mentions)
                 else:
                     raise RuntimeError(f"Expected to use existing mentions from input spacy document but {doc} has none.")
-            mentions = sorted((m for m in mentions), key=lambda m: (m.root.i, m.start))
+            # mentions = sorted((m for m in mentions), key=lambda m: (m.root.i, m.start))
+            mentions = sorted((m for m in mentions), key=lambda m: (m.start, m.end))
             
             # Looks like we're pre-allocating a list of mention clusters, maybe?
             c = <Mention_C*>mem.alloc(n_mentions, sizeof(Mention_C))
@@ -833,6 +834,8 @@ cdef class NeuralCoref(object):
                             or (c[mention_idx].mention_type == MENTION_TYPE["NOMINAL"] and
                                     c[ant_idx].mention_type == MENTION_TYPE["PRONOMINAL"]):
                             cluster_to_main[ant_idx] = mention_idx
+
+            if DEBUG: print('including singletons?', INCLUDE_SINGLETON_CLUSTERS)
             clusters_list = []
             i = 0
             for key, m_idx_list in clusters.items():
