@@ -8,8 +8,8 @@ import re
 import io
 from six import string_types, integer_types
 
-from neuralcoref.compat import unicode_
-from neuralcoref.utils import encode_distance, parallel_process
+from neuralcoref.train.compat import unicode_
+from neuralcoref.train.utils import encode_distance, parallel_process
 
 try:
     from itertools import izip_longest as zip_longest
@@ -85,7 +85,7 @@ def _extract_from_sent(doc, span, blacklist=True, debug=False):
                                            or doc[maxchild_idx].lower_ in lower_not_end):
             if debug: print("Removing last token", doc[maxchild_idx].lower_, doc[maxchild_idx].tag_)
             maxchild_idx -= 1 # We don't want mentions finishing with 's or conjunctions/punctuation
-        while minchild_idx <= maxchild_idx and (doc[minchild_idx].pos_ in remove_pos 
+        while minchild_idx <= maxchild_idx and (doc[minchild_idx].pos_ in remove_pos
                                            or doc[minchild_idx].lower_ in lower_not_end):
             if debug: print("Removing first token", doc[minchild_idx].lower_, doc[minchild_idx].tag_)
             minchild_idx += 1 # We don't want mentions starting with 's or conjunctions/punctuation
@@ -417,7 +417,7 @@ class EmbeddingExtractor:
                 return norm_word, self.tuned_embeddings.get(norm_word)
             else:
                 return self.get_stat_word(norm_word)
- 
+
     def get_word_in_sentence(self, word_idx, sentence):
         ''' Embedding for a word in a sentence '''
         if word_idx < sentence.start or word_idx >= sentence.end:
@@ -546,7 +546,7 @@ class Document(object):
     #######################################
     ###### UTERANCE LOADING FUNCTIONS #####
     #######################################
-    
+
     def set_utterances(self, utterances, utterances_speaker=None, speakers_names=None):
         self.utterances = []
         self.utterances_speaker = []
@@ -704,7 +704,7 @@ class Document(object):
         if mentions is None:
             mentions = range(len(self.mentions))
         if debug: print("get_candidate_pairs: mentions", mentions)
-        
+
         if max_distance_with_match is not None:
             word_to_mentions = {}
             for i in mentions:

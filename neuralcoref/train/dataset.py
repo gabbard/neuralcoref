@@ -14,10 +14,10 @@ import torch.utils.data
 from torch.utils.data.sampler import Sampler
 from torch.utils.data import Dataset
 
-from neuralcoref.utils import (encode_distance, BATCH_SIZE_PATH, SIZE_FP,
+from neuralcoref.train.utils import (encode_distance, BATCH_SIZE_PATH, SIZE_FP,
                                SIZE_FP_COMPRESSED, SIZE_FS, SIZE_FS_COMPRESSED,
                                SIZE_GENRE, SIZE_PAIR_IN, SIZE_SINGLE_IN)
-from neuralcoref.conllparser import FEATURES_NAMES
+from neuralcoref.train.conllparser import FEATURES_NAMES
 
 def load_embeddings_from_file(name):
     print("loading", name+"_embeddings.npy")
@@ -148,7 +148,7 @@ class NCDataset(Dataset):
         ant_features[:, 15] = ant_features_raw[:, 2].astype(float) / ant_features_raw[:, 3].astype(float)
         ant_features[:, 16] = ant_features_raw[:, 4]
         pairs_features[:, 29:46] = ant_features
-        # Here we keep the genre 
+        # Here we keep the genre
         ana_features = np.tile(features, (pairs_length, 1))
         pairs_features[:, 46:] = ana_features
 
@@ -213,7 +213,7 @@ class NCBatchSampler(Sampler):
                  shuffle=False, debug=False):
         """ Create and feed batches of mentions having close number of antecedents
             The batch are padded and collated by the padder_collate function
-        
+
         # Arguments:
             mentions_pairs_length array of shape (N, 1): list/array of the number of pairs for each mention
             batchsize: Number of pairs of each batch will be capped at this
@@ -232,7 +232,7 @@ class NCBatchSampler(Sampler):
         num = 0
         for length, mention_idx in sorted_lengths:
             if num > batchsize or (num == len(batch) and length != 0): # We keep the no_pairs batches pure
-                if debug: print("Added batch number", len(self.batches), 
+                if debug: print("Added batch number", len(self.batches),
                                 "with", len(batch), "mentions and", num, "pairs")
                 self.batches.append(batch)
                 self.batches_size.append(num) # We don't count the max 7 additional mentions that are repeated
@@ -281,7 +281,7 @@ class NCBatchSampler(Sampler):
 
 def padder_collate(batch, debug=False):
     """ Puts each data field into a tensor with outer dimension batch size
-        Pad variable length input tensors and add a weight tensor to the target 
+        Pad variable length input tensors and add a weight tensor to the target
     """
     transposed_inputs = tuple(zip(*batch))
     if len(transposed_inputs) == 2:

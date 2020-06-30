@@ -21,9 +21,9 @@ import numpy as np
 
 from tqdm import tqdm
 
-from .compat import unicode_
-from .document import Mention, Document, Speaker, EmbeddingExtractor, MISSING_WORD
-from .utils import parallel_process
+from neuralcoref.train.compat import unicode_
+from neuralcoref.train.document import Mention, Document, Speaker, EmbeddingExtractor, MISSING_WORD
+from neuralcoref.train.utils import parallel_process
 
 PACKAGE_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 REMOVED_CHAR = ["/", "%", "*"]
@@ -121,13 +121,13 @@ def load_file(full_name, debug=False):
     load a *._conll file
     Input: full_name: path to the file
     Output: list of tuples for each conll doc in the file, where the tuple contains:
-        (utts_text ([str]): list of the utterances in the document 
-         utts_tokens ([[str]]): list of the tokens (conll words) in the document 
+        (utts_text ([str]): list of the utterances in the document
+         utts_tokens ([[str]]): list of the tokens (conll words) in the document
          utts_corefs: list of coref objects (dicts) with the following properties:
             coref['label']: id of the coreference cluster,
             coref['start']: start index (index of first token in the utterance),
             coref['end': end index (index of last token in the utterance).
-         utts_speakers ([str]): list of the speaker associated to each utterances in the document 
+         utts_speakers ([str]): list of the speaker associated to each utterances in the document
          name (str): name of the document
          part (str): part of the document
         )
@@ -377,11 +377,11 @@ class ConllDoc(Document):
             mentions_features: (N, Fs)
             mentions_labels: (N, 1)
             mentions_pairs_start_index: (N, 1) index of beggining of pair list in pair_labels
-            mentions_pairs_length: (N, 1) number of pairs (i.e. nb of antecedents) for each mention 
+            mentions_pairs_length: (N, 1) number of pairs (i.e. nb of antecedents) for each mention
             pairs_features: (P, Fp)
             pairs_labels: (P, 1)
             pairs_ant_idx: (P, 1) => indexes of antecedents mention for each pair (mention index in doc)
-        """ 
+        """
         if not self.mentions:
             print("No mention in this doc !")
             return {}
@@ -610,7 +610,7 @@ class ConllCorpus(object):
             spacy_tokens, conll_tokens, corefs, speaker, doc_id = utt_tuple
             if debug: print(unicode_(self.docs_names[doc_id]), "-", spacy_tokens)
             doc = spacy_tokens
-            if debug: 
+            if debug:
                 out_str = "utterance " + unicode_(doc) + " corefs " + unicode_(corefs) + \
                           " speaker " + unicode_(speaker) + "doc_id" + unicode_(doc_id)
                 print(out_str.encode('utf-8'))
@@ -658,7 +658,7 @@ class ConllCorpus(object):
             np.save(save_path + feature, array)
         for feature in FEATURES_NAMES[9:]:
             print("Saving pickle", feature, "size", len(gathering_dict[feature]))
-            with open(save_path + feature + '.bin', "wb") as fp:  
+            with open(save_path + feature + '.bin', "wb") as fp:
                 pickle.dump(gathering_dict[feature], fp)
 
     def save_vocabulary(self, save_path, debug=False):
