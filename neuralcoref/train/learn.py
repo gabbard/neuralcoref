@@ -21,8 +21,9 @@ from tensorboardX import SummaryWriter
 from neuralcoref.train.model import Model
 from neuralcoref.train.dataset import (NCDataset, NCBatchSampler,
     load_embeddings_from_file, padder_collate,
-    SIZE_PAIR_IN, SIZE_SINGLE_IN, SIZE_EMBEDDING)
+    SIZE_PAIR_IN, SIZE_SINGLE_IN)
 from neuralcoref.train.evaluator import ConllEvaluator
+from neuralcoref.train.utils import SIZE_EMBEDDING
 
 PACKAGE_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 STAGES = ["allpairs", "toppairs", "ranking"]
