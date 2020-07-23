@@ -57,6 +57,10 @@ MAX_DIST_MATCH = 500
 DEBUG = True
 INCLUDE_SINGLETON_CLUSTERS = True
 
+def render_spacy_mention(m):
+    mention_text = m.text.replace("\n", "\\n").replace("\t", "\\t")
+    return f"{mention_text + '[' + repr(m.start_char) + ':' + repr(m.end_char) + ')'}"
+
 ##############################
 ##### A BUNCH OF SIZES #######
 
@@ -684,7 +688,7 @@ cdef class NeuralCoref(object):
             c = <Mention_C*>mem.alloc(n_mentions, sizeof(Mention_C))
             content_words = [] # content_words[i] will contain sets of tokens that represent the ith mention
             for i, m in enumerate(mentions):
-                if DEBUG: print(f"mention extracted ({i}): {m}")
+                if DEBUG: print(f"mention extracted ({i}): {render_spacy_mention(m)}")
                 c[i].entity_label = get_span_entity_label(m)
                 c[i].span_start = m.start
                 c[i].span_end = m.end
@@ -800,35 +804,59 @@ cdef class NeuralCoref(object):
             for i in range(n_mentions):
                 best_score[i] = s_score[i, 0] - 50 * (greedyness - 0.5)
                 best_ant[i] = i
-                if DEBUG: print(f"mention {i} singleton score: {best_score[i]}")
+                if DEBUG: print(f"mention {i} singleton score: {best_score[i]:.3f}")
 
             p_score = self.model[1](p_inp_arr)
-            if DEBUG: print(f'p_score: {p_score}')
+
             for i in range(n_pairs):
                 ant_idx = p_ant[i]
                 men_idx = p_men[i]
-                if DEBUG: print(f"checking pair {ant_idx},{men_idx} (ant,ment) with pair score={p_score[i, 0]} and best score={best_score[men_idx]}")
+                if DEBUG: print(f"looking for best antecedent: {ant_idx},{men_idx} (ant,ment) with pair score={p_score[i, 0]:.3f} (normalized: {p_score[i,0]-s_score[men_idx,0]:.3f}) and best score={best_score[men_idx]:.3f}")
                 if p_score[i, 0] > best_score[men_idx]:
                     best_score[men_idx] = p_score[i, 0]
                     best_ant[men_idx] = ant_idx
-                    if DEBUG: print(f"found new best antecedent for mention <{mentions[men_idx]}>: <{mentions[ant_idx]}> ({p_score[i, 0]})")
+                    if DEBUG: print(f"found new best antecedent for mention {render_spacy_mention(mentions[men_idx])}: {render_spacy_mention(mentions[ant_idx])} ({p_score[i, 0]:.3f})")
 
-            if DEBUG: print("Build clusters")
+            if DEBUG:
+                print("Build clusters from the following best antecedents:")
+                print('(mention: antecedent)')
+                for mention_idx, ant_idx in enumerate(best_ant):
+                    print(f"... {mention_idx}: {ant_idx} ({best_score[mention_idx]:.3f}, norm: {best_score[mention_idx]-s_score[mention_idx,0]:.3f})")
             # ''' Build clusters '''
             mention_to_cluster = list(range(n_mentions))
             cluster_to_main = list(range(n_mentions))
             clusters = dict((i, [i]) for i in mention_to_cluster)
 
             for mention_idx, ant_idx in enumerate(best_ant):
-                if ant_idx != mention_idx:
+                if DEBUG:
+                    print(f"check for merger of mention ({mention_idx}) <{render_spacy_mention(mentions[mention_idx])}> and best antecedent ({ant_idx}) <{render_spacy_mention(mentions[ant_idx])}> (score: {best_score[mention_idx]:.3f}, norm: {best_score[mention_idx]-s_score[mention_idx, 0]:.3f})")
+                    if ant_idx == mention_idx:
+                        print(f"... mention and antecedent are the same ({render_spacy_mention(mentions[mention_idx])}).")
+
+                if ant_idx != mention_idx:  # skip if the best ant for this mention is itself (i.e. singleton)
                     if mention_to_cluster[ant_idx] == mention_to_cluster[mention_idx]:
+                        if DEBUG: print(f"... mention and antecedent are already both in cluster {mention_to_cluster[ant_idx]}")
                         continue
+
+                    # if we get this far, it means we're going to merge the mentions.
+                    # keep the antecedent's cluster; merge the mention's cluster into it.
                     keep_id = mention_to_cluster[ant_idx]
                     remove_id = mention_to_cluster[mention_idx]
+
+                    # iterate over all of the members of the mention's cluster and move them to the antecedent's cluster
                     for idx in clusters[remove_id]:
                         mention_to_cluster[idx] = keep_id
                         clusters[keep_id].append(idx)
                     del clusters[remove_id]
+
+                    if DEBUG:
+                        print(f"... merged cluster {remove_id} into cluster {keep_id}")
+                        print(f"... there are now {len(clusters)} clusters:")
+                        for keep_id in clusters:
+                            print(f"... cluster {keep_id}:")
+                            for mention_idx in clusters[keep_id]:
+                                print(f"     {mention_idx}. {render_spacy_mention(mentions[mention_idx])}")
+
                     if c[ant_idx].mention_type != c[mention_idx].mention_type:
                         if c[mention_idx].mention_type == MENTION_TYPE["PROPER"] \
                             or (c[mention_idx].mention_type == MENTION_TYPE["NOMINAL"] and
